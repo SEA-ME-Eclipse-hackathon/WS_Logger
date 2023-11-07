@@ -44,7 +44,7 @@ class LoggerApp(VehicleApp):
     It will be used to report to cloud
     """
 
-    LOG_PATH = "./log/vehicle"
+    LOG_PATH = "/log/vehicle"
     LOG_FORMAT = "%(asctime)s [%(name)s]- %(message)s"
 
     def __init__(self, vehicle_client: Vehicle):
