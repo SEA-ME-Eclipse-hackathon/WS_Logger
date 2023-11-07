@@ -1,6 +1,6 @@
 {
     "manifestVersion": "v3",
-    "name": "SampleApp",
+    "name": "LoggerApp",
     "interfaces": [
         {
             "type": "vehicle-signal-interface",
@@ -20,11 +20,7 @@
             "type": "pubsub",
             "config": {
                 "reads": [
-                    "sampleapp/getSpeed"
-                ],
-                "writes": [
-                    "sampleapp/getSpeed/response",
-                    "sampleapp/currentSpeed"
+                    "logger/log"
                 ]
             }
         }

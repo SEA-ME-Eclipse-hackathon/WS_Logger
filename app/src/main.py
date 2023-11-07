@@ -15,9 +15,10 @@
 """A sample skeleton vehicle app."""
 
 import asyncio
-import json
 import logging
+import os
 import signal
+from logging.handlers import TimedRotatingFileHandler
 
 from vehicle import Vehicle, vehicle  # type: ignore
 from velocitas_sdk.util.log import (  # type: ignore
@@ -25,7 +26,7 @@ from velocitas_sdk.util.log import (  # type: ignore
     get_opentelemetry_log_format,
 )
 from velocitas_sdk.vdb.reply import DataPointReply
-from velocitas_sdk.vehicle_app import VehicleApp, subscribe_topic
+from velocitas_sdk.vehicle_app import VehicleApp, subscribe_data_points, subscribe_topic
 
 # Configure the VehicleApp logger with the necessary log config and level.
 logging.setLogRecordFactory(get_opentelemetry_log_factory())
@@ -33,91 +34,56 @@ logging.basicConfig(format=get_opentelemetry_log_format())
 logging.getLogger().setLevel("DEBUG")
 logger = logging.getLogger(__name__)
 
-GET_SPEED_REQUEST_TOPIC = "sampleapp/getSpeed"
-GET_SPEED_RESPONSE_TOPIC = "sampleapp/getSpeed/response"
-DATABROKER_SUBSCRIPTION_TOPIC = "sampleapp/currentSpeed"
+SAFETY_FATAL_TOPIC = "safety/fatal"
+LOGGER_LOG_TOPIC = "loggerapp/log"
 
 
-class SampleApp(VehicleApp):
+class LoggerApp(VehicleApp):
     """
-    Sample skeleton vehicle app.
-
-    The skeleton subscribes to a getSpeed MQTT topic
-    to listen for incoming requests to get
-    the current vehicle speed and publishes it to
-    a response topic.
-
-    It also subcribes to the VehicleDataBroker
-    directly for updates of the
-    Vehicle.Speed signal and publishes this
-    information via another specific MQTT topic
+    This Logger logs vehicle information to log file
+    It will be used to report to cloud
     """
+
+    LOG_PATH = "./log/vehicle"
+    LOG_FORMAT = "%(asctime)s [%(name)s]- %(message)s"
 
     def __init__(self, vehicle_client: Vehicle):
         # SampleApp inherits from VehicleApp.
         super().__init__()
         self.Vehicle = vehicle_client
+        # set Logger
+        os.makedirs(os.path.dirname(self.LOG_PATH), exist_ok=True)
+        logFileHandler = TimedRotatingFileHandler(
+            filename=self.LOG_PATH,
+            when="s",
+            interval=60,
+            backupCount=5,
+            encoding="UTF-8",
+        )
+        logFileHandler.setFormatter(logging.Formatter(self.LOG_FORMAT))
+        self.logger = logging.getLogger("VehicleSafetyLogger")
+        self.logger.addHandler(logFileHandler)
+        self.logger.setLevel("INFO")
 
     async def on_start(self):
-        """Run when the vehicle app starts"""
-        # This method will be called by the SDK when the connection to the
-        # Vehicle DataBroker is ready.
-        # Here you can subscribe for the Vehicle Signals update (e.g. Vehicle Speed).
-        await self.Vehicle.Speed.subscribe(self.on_speed_change)
+        self.logger.info("LoggerApp started")
+        return
 
+    @subscribe_data_points("Vehicle.Speed")
     async def on_speed_change(self, data: DataPointReply):
-        """The on_speed_change callback, this will be executed when receiving a new
-        vehicle signal updates."""
-        # Get the current vehicle speed value from the received DatapointReply.
-        # The DatapointReply containes the values of all subscribed DataPoints of
-        # the same callback.
         vehicle_speed = data.get(self.Vehicle.Speed).value
+        self.logger.info(f"speed : {vehicle_speed}")
 
-        # Do anything with the received value.
-        # Example:
-        # - Publishes current speed to MQTT Topic (i.e. DATABROKER_SUBSCRIPTION_TOPIC).
-        await self.publish_event(
-            DATABROKER_SUBSCRIPTION_TOPIC,
-            json.dumps({"speed": vehicle_speed}),
-        )
-
-    @subscribe_topic(GET_SPEED_REQUEST_TOPIC)
-    async def on_get_speed_request_received(self, data: str) -> None:
-        """The subscribe_topic annotation is used to subscribe for incoming
-        PubSub events, e.g. MQTT event for GET_SPEED_REQUEST_TOPIC.
-        """
-
-        # Use the logger with the preferred log level (e.g. debug, info, error, etc)
-        logger.debug(
-            "PubSub event for the Topic: %s -> is received with the data: %s",
-            GET_SPEED_REQUEST_TOPIC,
-            data,
-        )
-
-        # Getting current speed from VehicleDataBroker using the DataPoint getter.
-        vehicle_speed = (await self.Vehicle.Speed.get()).value
-
-        # Do anything with the speed value.
-        # Example:
-        # - Publishes the vehicle speed to MQTT topic (i.e. GET_SPEED_RESPONSE_TOPIC).
-        await self.publish_event(
-            GET_SPEED_RESPONSE_TOPIC,
-            json.dumps(
-                {
-                    "result": {
-                        "status": 0,
-                        "message": f"""Current Speed = {vehicle_speed}""",
-                    },
-                }
-            ),
-        )
+    @subscribe_topic(LOGGER_LOG_TOPIC)
+    async def on_log(self, data: str):
+        self.logger.info(str)
 
 
 async def main():
     """Main function"""
-    logger.info("Starting SampleApp...")
+    logger.info("Starting LoggerApp...")
     # Constructing SampleApp and running it.
-    vehicle_app = SampleApp(vehicle)
+    vehicle_app = LoggerApp(vehicle)
     await vehicle_app.run()
 
 
